@@ -7,14 +7,19 @@
     "src",
     "README.md"
   ],
-  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nexum-io/common-organizations-client-utils.git"
   },
-  "engines": {
-    "node": ">=20"
+  "bugs": {
+    "url": "https://github.com/nexum-io/common-organizations-client-utils/issues"
   },
+  "homepage": "https://github.com/nexum-io/common-organizations-client-utils#readme",
+  "author": "nexum-io",
+  "license": "MIT",
   "scripts": {
     "test": "jest --coverage=false",
     "ci:check": "npm test"
