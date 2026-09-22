@@ -210,6 +210,57 @@ class CoreOrganizationsClient {
     const encoded = encodeURIComponent(token);
     return this.#request('POST', `/invites/${encoded}/accept`, { userSubject, body: {} });
   }
+
+  listOrganizationApiKeys(userSubject, orgId) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    return this.#request('GET', `/organizations/${encodedOrgId}/api-keys`, { userSubject });
+  }
+
+  // Not retried: every successful call mints a new secret, so a retry after a
+  // lost response could issue a second key the caller never sees.
+  createOrganizationApiKey(userSubject, orgId, body) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    return this.#request('POST', `/organizations/${encodedOrgId}/api-keys`, {
+      userSubject,
+      body,
+      options: { maxRetries: 0 },
+    });
+  }
+
+  renameOrganizationApiKey(userSubject, orgId, keyId, body) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    const encodedKeyId = encodeURIComponent(keyId);
+    return this.#request('PATCH', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}`, {
+      userSubject,
+      body,
+    });
+  }
+
+  // Not retried for the same reason as createOrganizationApiKey.
+  rotateOrganizationApiKey(userSubject, orgId, keyId, body) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    const encodedKeyId = encodeURIComponent(keyId);
+    return this.#request('POST', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}/rotate`, {
+      userSubject,
+      body,
+      options: { maxRetries: 0 },
+    });
+  }
+
+  revokeOrganizationApiKey(userSubject, orgId, keyId) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    const encodedKeyId = encodeURIComponent(keyId);
+    return this.#request('POST', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}/revoke`, {
+      userSubject,
+      body: {},
+    });
+  }
+
+  // S2S only (no X-User-Subject). The presented key goes in the body, never in
+  // the path: paths are echoed into error messages and retry logs.
+  introspectApiKey(apiKey) {
+    return this.#request('POST', '/api-keys/introspect', { body: { apiKey } });
+  }
 }
 
 module.exports = CoreOrganizationsClient;
