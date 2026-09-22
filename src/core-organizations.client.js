@@ -5,6 +5,10 @@ const { withRetry } = require('./with-retry');
 
 const BARE_ORIGIN_TRAP_RE = /\/api(\/v\d+)?\/?$/;
 
+// Calls that mint a new API key secret are never retried: a retry after a lost
+// response could issue a second key the caller never sees.
+const NO_RETRY = Object.freeze({ maxRetries: 0 });
+
 /**
  * HTTP transport to core-organizations-ms internal API.
  * Contract: core-organizations-ms/docs/openapi/internal-api.openapi.yaml
@@ -216,14 +220,12 @@ class CoreOrganizationsClient {
     return this.#request('GET', `/organizations/${encodedOrgId}/api-keys`, { userSubject });
   }
 
-  // Not retried: every successful call mints a new secret, so a retry after a
-  // lost response could issue a second key the caller never sees.
   createOrganizationApiKey(userSubject, orgId, body) {
     const encodedOrgId = encodeURIComponent(orgId);
     return this.#request('POST', `/organizations/${encodedOrgId}/api-keys`, {
       userSubject,
       body,
-      options: { maxRetries: 0 },
+      options: NO_RETRY,
     });
   }
 
@@ -236,14 +238,13 @@ class CoreOrganizationsClient {
     });
   }
 
-  // Not retried for the same reason as createOrganizationApiKey.
   rotateOrganizationApiKey(userSubject, orgId, keyId, body) {
     const encodedOrgId = encodeURIComponent(orgId);
     const encodedKeyId = encodeURIComponent(keyId);
     return this.#request('POST', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}/rotate`, {
       userSubject,
       body,
-      options: { maxRetries: 0 },
+      options: NO_RETRY,
     });
   }
 
@@ -258,8 +259,8 @@ class CoreOrganizationsClient {
 
   // S2S only (no X-User-Subject). The presented key goes in the body, never in
   // the path: paths are echoed into error messages and retry logs.
-  introspectApiKey(apiKey) {
-    return this.#request('POST', '/api-keys/introspect', { body: { apiKey } });
+  introspectApiKey(presentedKey) {
+    return this.#request('POST', '/api-keys/introspect', { body: { apiKey: presentedKey } });
   }
 }
 

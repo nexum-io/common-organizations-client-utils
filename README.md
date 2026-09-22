@@ -60,14 +60,25 @@ Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/
 | `renameOrganizationApiKey(userSubject, orgId, keyId, body)` | `PATCH /organizations/{orgId}/api-keys/{keyId}` | body `{ name }` → key |
 | `rotateOrganizationApiKey(userSubject, orgId, keyId, body)` | `POST /organizations/{orgId}/api-keys/{keyId}/rotate` | body `{ expiresAt }` → key + `fullKey`; never retried |
 | `revokeOrganizationApiKey(userSubject, orgId, keyId)` | `POST /organizations/{orgId}/api-keys/{keyId}/revoke` | → key |
-| `introspectApiKey(apiKey)` | `POST /api-keys/introspect` | body `{ apiKey }` → `{ keyId, organizationId, name, prefix, scopes, expiresAt, status }`; no `X-User-Subject` |
+| `introspectApiKey(presentedKey)` | `POST /api-keys/introspect` | body `{ apiKey }` → `{ keyId, organizationId, name, prefix, scopes, expiresAt, status }`; no `X-User-Subject` |
 
 A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBySubject, lastUsedAt, status }`, with `status` one of `active`, `expired`, `revoked`.
 
 ## Organization API keys
 
 - `createOrganizationApiKey` and `rotateOrganizationApiKey` are **never retried**, whatever the instance `maxRetries`: each successful call mints a new secret, and a retry after a lost response could mint a second one nobody sees. A timeout does not prove the call failed — re-read `listOrganizationApiKeys` before trying again. All other methods keep the instance retry policy.
-- `introspectApiKey(apiKey)` sends **no** `X-User-Subject` and is meant for the `partners` consumer (Core rejects other consumers). The presented key travels only in the request body, never in the path or query, which end up in error messages and retry logs. An unknown or revoked key rejects with `statusCode` 401 and `meta.coreCode` `UNAUTHORIZED`; an expired one with `API_KEY_EXPIRED`.
+- `introspectApiKey(presentedKey)` sends **no** `X-User-Subject` and is meant for the `partners` consumer. The presented key travels only in the request body (`{ apiKey }`), never in the path or query, which end up in error messages and retry logs. On success Core returns the key with `status: "active"`.
+- Introspect failures (`CoreOrganizationsError`):
+
+  | `statusCode` | `meta.coreCode` | `errors` | Meaning |
+  |---|---|---|---|
+  | 401 | `UNAUTHORIZED` | `['api_key.invalid']` | Unknown, malformed or revoked key, or its organization is archived (not distinguished). |
+  | 401 | `API_KEY_EXPIRED` | `['api_key.expired']` | Key exists but `expiresAt` has passed. |
+  | 401 | `UNAUTHORIZED` | no `api_key.*` marker | The **caller's own** product `api-key` was rejected by Core (misconfiguration), not the presented key. |
+  | 403 | `FORBIDDEN` | | The product `api-key` belongs to a consumer other than `partners`. |
+  | 400 | `VALIDATION_FAILED` | | `apiKey` missing, empty or not a string. |
+
+  Treat a 401 without an `api_key.*` marker, and any 403, as a dependency failure on your side, never as "the integrator's key is bad".
 - `fullKey` (create and rotate responses only) is the plaintext secret, returned once. **Never log it**, nor a presented key or the `api-key` header — log `id` / `keyId` and `prefix` only.
 
 ## Consumer ENV
