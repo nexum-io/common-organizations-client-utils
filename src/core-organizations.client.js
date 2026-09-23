@@ -5,6 +5,10 @@ const { withRetry } = require('./with-retry');
 
 const BARE_ORIGIN_TRAP_RE = /\/api(\/v\d+)?\/?$/;
 
+// Calls that mint a new API key secret are never retried: a retry after a lost
+// response could issue a second key the caller never sees.
+const NO_RETRY = Object.freeze({ maxRetries: 0 });
+
 /**
  * HTTP transport to core-organizations-ms internal API.
  * Contract: core-organizations-ms/docs/openapi/internal-api.openapi.yaml
@@ -209,6 +213,54 @@ class CoreOrganizationsClient {
   acceptInvite(userSubject, token) {
     const encoded = encodeURIComponent(token);
     return this.#request('POST', `/invites/${encoded}/accept`, { userSubject, body: {} });
+  }
+
+  listOrganizationApiKeys(userSubject, orgId) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    return this.#request('GET', `/organizations/${encodedOrgId}/api-keys`, { userSubject });
+  }
+
+  createOrganizationApiKey(userSubject, orgId, body) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    return this.#request('POST', `/organizations/${encodedOrgId}/api-keys`, {
+      userSubject,
+      body,
+      options: NO_RETRY,
+    });
+  }
+
+  renameOrganizationApiKey(userSubject, orgId, keyId, body) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    const encodedKeyId = encodeURIComponent(keyId);
+    return this.#request('PATCH', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}`, {
+      userSubject,
+      body,
+    });
+  }
+
+  rotateOrganizationApiKey(userSubject, orgId, keyId, body) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    const encodedKeyId = encodeURIComponent(keyId);
+    return this.#request('POST', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}/rotate`, {
+      userSubject,
+      body,
+      options: NO_RETRY,
+    });
+  }
+
+  revokeOrganizationApiKey(userSubject, orgId, keyId) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    const encodedKeyId = encodeURIComponent(keyId);
+    return this.#request('POST', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}/revoke`, {
+      userSubject,
+      body: {},
+    });
+  }
+
+  // S2S only (no X-User-Subject). The presented key goes in the body, never in
+  // the path: paths are echoed into error messages and retry logs.
+  introspectApiKey(presentedKey) {
+    return this.#request('POST', '/api-keys/introspect', { body: { apiKey: presentedKey } });
   }
 }
 

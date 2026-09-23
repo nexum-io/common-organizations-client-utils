@@ -1,6 +1,6 @@
 {
   "name": "@nexum-io/common-organizations-client-utils",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "S2S HTTP client for core-organizations-ms internal API",
   "main": "src/index.js",
   "files": [
