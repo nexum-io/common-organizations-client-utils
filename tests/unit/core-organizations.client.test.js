@@ -4,9 +4,11 @@ const CoreOrganizationsClient = require('../../src/core-organizations.client');
 
 describe('CoreOrganizationsClient', () => {
   const logger = { warn: jest.fn(), error: jest.fn() };
+  const getDelegationJwt = jest.fn(async () => 'test-delegation-jwt');
 
   beforeEach(() => {
     jest.clearAllMocks();
+    getDelegationJwt.mockResolvedValue('test-delegation-jwt');
     axios.get = jest.fn();
     axios.post = jest.fn();
     axios.patch = jest.fn();
@@ -28,19 +30,32 @@ describe('CoreOrganizationsClient', () => {
       baseUrl: 'http://core:8092',
       apiKey: 'secret',
       logger,
+      getDelegationJwt,
     });
     const body = await client.createOrganization('user-1', { name: 'Acme' });
     expect(body.id).toBe('org-1');
+    expect(getDelegationJwt).toHaveBeenCalledWith({ userSubject: 'user-1' });
     expect(axios.post).toHaveBeenCalledWith(
       'http://core:8092/api/v1/internal/organizations',
       { name: 'Acme' },
       expect.objectContaining({
         headers: expect.objectContaining({
           'api-key': 'secret',
-          'X-User-Subject': 'user-1',
+          'X-Delegation-JWT': 'test-delegation-jwt',
         }),
       })
     );
+    expect(axios.post.mock.calls[0][2].headers['X-User-Subject']).toBeUndefined();
+  });
+
+  test('user-scoped call without delegationJwt fails closed', async () => {
+    const client = new CoreOrganizationsClient({
+      baseUrl: 'http://core:8092',
+      apiKey: 'secret',
+      logger,
+    });
+    await expect(client.createOrganization('user-1', { name: 'Acme' }))
+      .rejects.toThrow(/X-Delegation-JWT is required/);
   });
 
   test('wraps upstream error envelope into CoreOrganizationsError', async () => {
@@ -56,6 +71,7 @@ describe('CoreOrganizationsClient', () => {
       apiKey: 'secret',
       logger,
       maxRetries: 0,
+      getDelegationJwt,
     });
     await expect(client.getOrganization('user-1', 'org-1')).rejects.toBeInstanceOf(
       CoreOrganizationsError
@@ -89,12 +105,13 @@ describe('CoreOrganizationsClient', () => {
         apiKey: 'secret',
         logger,
         retryBaseDelayMs: 0,
+        getDelegationJwt,
         ...overrides,
       });
     }
 
     const actingUserHeaders = expect.objectContaining({
-      headers: expect.objectContaining({ 'api-key': 'secret', 'X-User-Subject': 'user-1' }),
+      headers: expect.objectContaining({ 'api-key': 'secret', 'X-Delegation-JWT': 'test-delegation-jwt' }),
     });
 
     test('listOrganizationApiKeys GETs the org keys as the acting user and returns Core items', async () => {
@@ -278,7 +295,7 @@ describe('CoreOrganizationsClient', () => {
     describe('introspectApiKey', () => {
       const presentedKey = 'nxm_ab12cd34_test-fixture-not-a-real-key';
 
-      test('POSTs the presented key in the body with only the product api-key (no X-User-Subject)', async () => {
+      test('POSTs the presented key in the body with only the product api-key (no X-Delegation-JWT)', async () => {
         const introspection = {
           keyId: 'key-1',
           organizationId: 'org-1',

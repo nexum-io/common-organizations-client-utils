@@ -12,7 +12,7 @@ Product adapters and domain error maps stay in each MS.
 ## Install
 
 ```bash
-npm install github:nexum-io/common-organizations-client-utils#v0.2.0
+npm install github:nexum-io/common-organizations-client-utils#v0.3.0
 ```
 
 ## Usage
@@ -30,6 +30,8 @@ const client = new CoreOrganizationsClient({
   timeoutMs: Number(process.env.CORE_ORGANIZATIONS_HTTP_TIMEOUT_MS) || 30000,
   maxRetries: Number(process.env.CORE_ORGANIZATIONS_HTTP_MAX_RETRIES) || 2,
   retryBaseDelayMs: Number(process.env.CORE_ORGANIZATIONS_RETRY_BASE_DELAY_MS) || 250,
+  // ARCH-005: required for user-scoped calls (Core hard-cut — no bare X-User-Subject)
+  getDelegationJwt: async ({ userSubject }) => exchangeAccessForDelegation(userSubject),
 });
 ```
 
@@ -37,7 +39,7 @@ const client = new CoreOrganizationsClient({
 
 ## Methods
 
-Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/v1/internal`. Every call sends the product `api-key`; a `userSubject` argument is also sent as `X-User-Subject`. Methods resolve with Core's JSON body as is; HTTP failures reject with `CoreOrganizationsError`.
+Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/v1/internal`. Every call sends the product `api-key`. User-scoped methods also send `X-Delegation-JWT` from `getDelegationJwt({ userSubject })` or per-call `options.delegationJwt` (path still uses the `userSubject` argument). Methods resolve with Core's JSON body as is; HTTP failures reject with `CoreOrganizationsError`.
 
 | Method | Route | Notes |
 |--------|-------|-------|
@@ -53,21 +55,21 @@ Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/
 | `listOrganizationInvites(userSubject, orgId)` | `GET /organizations/{orgId}/invites` | |
 | `createOrganizationInvite(userSubject, orgId, body)` | `POST /organizations/{orgId}/invites` | |
 | `revokeOrganizationInvite(userSubject, orgId, inviteId)` | `POST /organizations/{orgId}/invites/{inviteId}/revoke` | |
-| `previewInvite(token)` | `GET /invites/{token}` | no `X-User-Subject` |
+| `previewInvite(token)` | `GET /invites/{token}` | no delegation header |
 | `acceptInvite(userSubject, token)` | `POST /invites/{token}/accept` | |
 | `listOrganizationApiKeys(userSubject, orgId)` | `GET /organizations/{orgId}/api-keys` | → `{ items }`, newest first, revoked included |
 | `createOrganizationApiKey(userSubject, orgId, body)` | `POST /organizations/{orgId}/api-keys` | body `{ name, scopes, expiresAt }` → key + `fullKey`; never retried |
 | `renameOrganizationApiKey(userSubject, orgId, keyId, body)` | `PATCH /organizations/{orgId}/api-keys/{keyId}` | body `{ name }` → key |
 | `rotateOrganizationApiKey(userSubject, orgId, keyId, body)` | `POST /organizations/{orgId}/api-keys/{keyId}/rotate` | body `{ expiresAt }` → key + `fullKey`; never retried |
 | `revokeOrganizationApiKey(userSubject, orgId, keyId)` | `POST /organizations/{orgId}/api-keys/{keyId}/revoke` | → key |
-| `introspectApiKey(presentedKey)` | `POST /api-keys/introspect` | body `{ apiKey }` → `{ keyId, organizationId, name, prefix, scopes, expiresAt, status }`; no `X-User-Subject` |
+| `introspectApiKey(presentedKey)` | `POST /api-keys/introspect` | body `{ apiKey }` → `{ keyId, organizationId, name, prefix, scopes, expiresAt, status }`; no delegation header |
 
 A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBySubject, lastUsedAt, status }`, with `status` one of `active`, `expired`, `revoked`.
 
 ## Organization API keys
 
 - `createOrganizationApiKey` and `rotateOrganizationApiKey` are **never retried**, whatever the instance `maxRetries`: each successful call mints a new secret, and a retry after a lost response could mint a second one nobody sees. A timeout does not prove the call failed — re-read `listOrganizationApiKeys` before trying again. All other methods keep the instance retry policy.
-- `introspectApiKey(presentedKey)` sends **no** `X-User-Subject` and is meant for the `partners` consumer. The presented key travels only in the request body (`{ apiKey }`), never in the path or query, which end up in error messages and retry logs. On success Core returns the key with `status: "active"`.
+- `introspectApiKey(presentedKey)` sends **no** `X-Delegation-JWT` and is meant for the `partners` consumer. The presented key travels only in the request body (`{ apiKey }`), never in the path or query, which end up in error messages and retry logs. On success Core returns the key with `status: "active"`.
 - Introspect failures (`CoreOrganizationsError`):
 
   | `statusCode` | `meta.coreCode` | `errors` | Meaning |
