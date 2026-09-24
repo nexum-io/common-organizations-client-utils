@@ -26,6 +26,7 @@ class CoreOrganizationsClient {
     maxRetries = 2,
     retryBaseDelayMs = 250,
     apiPath = '/api/v1/internal',
+    getDelegationJwt = null,
   } = {}) {
     const resolvedBaseUrl = (baseUrl ?? '').trim().replace(/\/+$/, '');
     const resolvedApiKey = apiKey ?? null;
@@ -50,6 +51,7 @@ class CoreOrganizationsClient {
     this.defaultTimeoutMs = timeoutMs;
     this.maxRetries = maxRetries;
     this.retryBaseDelayMs = retryBaseDelayMs;
+    this.getDelegationJwt = typeof getDelegationJwt === 'function' ? getDelegationJwt : null;
   }
 
   #assertEnabled() {
@@ -61,14 +63,27 @@ class CoreOrganizationsClient {
     }
   }
 
-  #headers(userSubject) {
+  async #headers(userSubject, { delegationJwt } = {}) {
     const headers = {
       'Content-Type': 'application/json',
       'api-key': this.apiKey,
     };
-    if (userSubject) {
-      headers['X-User-Subject'] = userSubject;
+    if (!userSubject) {
+      return headers;
     }
+
+    let token = typeof delegationJwt === 'string' ? delegationJwt.trim() : '';
+    if (!token && this.getDelegationJwt) {
+      const resolved = await this.getDelegationJwt({ userSubject });
+      token = typeof resolved === 'string' ? resolved.trim() : '';
+    }
+    if (!token) {
+      throw new Error(
+        'X-Delegation-JWT is required for user-scoped Core organizations calls '
+        + '(pass options.delegationJwt or constructor getDelegationJwt)'
+      );
+    }
+    headers['X-Delegation-JWT'] = token;
     return headers;
   }
 
@@ -131,8 +146,11 @@ class CoreOrganizationsClient {
     const timeout = options.timeoutMs ?? this.defaultTimeoutMs;
     const maxRetries = options.maxRetries ?? this.maxRetries;
     const url = `${this.apiRoot}${path}`;
+    const headers = await this.#headers(userSubject, {
+      delegationJwt: options.delegationJwt,
+    });
     const config = {
-      headers: this.#headers(userSubject),
+      headers,
       timeout,
       params,
       validateStatus: (status) => status >= 200 && status < 300,
