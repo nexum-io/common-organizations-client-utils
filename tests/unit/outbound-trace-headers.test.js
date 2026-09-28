@@ -1,3 +1,12 @@
+jest.mock('@nexum-io/common-observability-logging-package', () => {
+  const { AsyncLocalStorage } = require('async_hooks');
+  const als = new AsyncLocalStorage();
+  return {
+    getCorrelationContext: () => als.getStore() || {},
+    runWithCorrelation: (context, fn) => als.run({ ...(als.getStore() || {}), ...context }, fn),
+  };
+}, { virtual: true });
+
 const { runWithCorrelation } = require('@nexum-io/common-observability-logging-package');
 const { outboundTraceHeaders } = require('../../src/outbound-trace-headers');
 

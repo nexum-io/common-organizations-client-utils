@@ -28,11 +28,7 @@
     "axios": "^1.18.1"
   },
   "devDependencies": {
-    "@nexum-io/common-observability-logging-package": "github:nexum-io/common-observability-logging-package#v0.1.0",
     "jest": "^29.7.0"
-  },
-  "peerDependencies": {
-    "@nexum-io/common-observability-logging-package": "0.1.0"
   },
   "peerDependenciesMeta": {
     "@nexum-io/common-observability-logging-package": {

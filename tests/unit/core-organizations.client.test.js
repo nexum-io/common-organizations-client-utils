@@ -1,4 +1,12 @@
 jest.mock('axios');
+jest.mock('@nexum-io/common-observability-logging-package', () => {
+  const { AsyncLocalStorage } = require('async_hooks');
+  const als = new AsyncLocalStorage();
+  return {
+    getCorrelationContext: () => als.getStore() || {},
+    runWithCorrelation: (context, fn) => als.run({ ...(als.getStore() || {}), ...context }, fn),
+  };
+}, { virtual: true });
 const axios = require('axios');
 const CoreOrganizationsClient = require('../../src/core-organizations.client');
 
