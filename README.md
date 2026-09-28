@@ -12,7 +12,7 @@ Product adapters and domain error maps stay in each MS.
 ## Install
 
 ```bash
-npm install github:nexum-io/common-organizations-client-utils#v0.3.0
+npm install github:nexum-io/common-organizations-client-utils#v0.4.0
 ```
 
 ## Usage
@@ -36,6 +36,8 @@ const client = new CoreOrganizationsClient({
 ```
 
 `baseUrl` must be the bare service origin (e.g. `http://core-organizations-ms:8092`). Do **not** suffix `/api` or `/api/v1` — the client appends `/api/v1/internal` itself.
+
+**v0.4.0 (ARCH-030):** every request also sends `x-correlation-id` and a fresh `x-request-id`. When the host app has `@nexum-io/common-observability-logging-package` installed, `x-correlation-id` is the AsyncLocalStorage `correlation_id`. Otherwise it is a new UUID. The observability package is an optional peer, not a hard dependency.
 
 ## Methods
 
