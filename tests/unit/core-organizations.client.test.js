@@ -1,4 +1,12 @@
 jest.mock('axios');
+jest.mock('@nexum-io/common-observability-logging-package', () => {
+  const { AsyncLocalStorage } = require('async_hooks');
+  const als = new AsyncLocalStorage();
+  return {
+    getCorrelationContext: () => als.getStore() || {},
+    runWithCorrelation: (context, fn) => als.run({ ...(als.getStore() || {}), ...context }, fn),
+  };
+}, { virtual: true });
 const axios = require('axios');
 const CoreOrganizationsClient = require('../../src/core-organizations.client');
 
@@ -314,7 +322,13 @@ describe('CoreOrganizationsClient', () => {
         const [url, body, config] = axios.post.mock.calls[0];
         expect(url).toBe('http://core:8092/api/v1/internal/api-keys/introspect');
         expect(body).toEqual({ apiKey: presentedKey });
-        expect(config.headers).toEqual({ 'Content-Type': 'application/json', 'api-key': 'secret' });
+        expect(config.headers).toEqual(expect.objectContaining({
+          'Content-Type': 'application/json',
+          'api-key': 'secret',
+        }));
+        expect(config.headers['X-Delegation-JWT']).toBeUndefined();
+        expect(config.headers['x-correlation-id']).toEqual(expect.any(String));
+        expect(config.headers['x-request-id']).toEqual(expect.any(String));
         expect(config.params).toBeUndefined();
       });
 
@@ -356,5 +370,27 @@ describe('CoreOrganizationsClient', () => {
         expect(axios.post).toHaveBeenCalledTimes(1);
       });
     });
+  });
+
+  test('sends the same correlation id and a new request id on each call', async () => {
+    const { runWithCorrelation } = require('@nexum-io/common-observability-logging-package');
+    axios.get.mockResolvedValue({ data: { token: 'invite' } });
+    const client = new CoreOrganizationsClient({
+      baseUrl: 'http://core:8092',
+      apiKey: 'secret',
+      logger,
+    });
+
+    await runWithCorrelation({ correlation_id: 'corr-orgs' }, async () => {
+      await client.previewInvite('tok-1');
+      await client.previewInvite('tok-2');
+    });
+
+    const first = axios.get.mock.calls[0][1].headers;
+    const second = axios.get.mock.calls[1][1].headers;
+    expect(first['x-correlation-id']).toBe('corr-orgs');
+    expect(second['x-correlation-id']).toBe('corr-orgs');
+    expect(first['x-request-id']).not.toBe(second['x-request-id']);
+    expect(first['api-key']).toBe('secret');
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@nexum-io/common-organizations-client-utils",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "S2S HTTP client for core-organizations-ms internal API",
   "main": "src/index.js",
   "files": [
@@ -29,6 +29,11 @@
   },
   "devDependencies": {
     "jest": "^29.7.0"
+  },
+  "peerDependenciesMeta": {
+    "@nexum-io/common-observability-logging-package": {
+      "optional": true
+    }
   },
   "jest": {
     "testEnvironment": "node",

@@ -1,6 +1,7 @@
 const axios = require('axios');
 
 const { CoreOrganizationsError } = require('./core-organizations-error');
+const { outboundTraceHeaders } = require('./outbound-trace-headers');
 const { withRetry } = require('./with-retry');
 
 const BARE_ORIGIN_TRAP_RE = /\/api(\/v\d+)?\/?$/;
@@ -67,6 +68,7 @@ class CoreOrganizationsClient {
     const headers = {
       'Content-Type': 'application/json',
       'api-key': this.apiKey,
+      ...outboundTraceHeaders(),
     };
     if (!userSubject) {
       return headers;
