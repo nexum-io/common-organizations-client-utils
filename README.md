@@ -65,6 +65,7 @@ Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/
 | `rotateOrganizationApiKey(userSubject, orgId, keyId, body)` | `POST /organizations/{orgId}/api-keys/{keyId}/rotate` | body `{ expiresAt }` → key + `fullKey`; never retried |
 | `revokeOrganizationApiKey(userSubject, orgId, keyId)` | `POST /organizations/{orgId}/api-keys/{keyId}/revoke` | → key |
 | `introspectApiKey(presentedKey)` | `POST /api-keys/introspect` | body `{ apiKey }` → `{ keyId, organizationId, name, prefix, scopes, expiresAt, status }`; no delegation header |
+| `listAdminOrganizations({ q, limit, cursor })` | `GET /admin/organizations` | → `{ items, nextCursor }`; no delegation header; `admin` consumer |
 
 A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBySubject, lastUsedAt, status }`, with `status` one of `active`, `expired`, `revoked`.
 
@@ -72,6 +73,7 @@ A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBy
 
 - `createOrganizationApiKey` and `rotateOrganizationApiKey` are **never retried**, whatever the instance `maxRetries`: each successful call mints a new secret, and a retry after a lost response could mint a second one nobody sees. A timeout does not prove the call failed — re-read `listOrganizationApiKeys` before trying again. All other methods keep the instance retry policy.
 - `introspectApiKey(presentedKey)` sends **no** `X-Delegation-JWT` and is meant for the `partners` consumer. The presented key travels only in the request body (`{ apiKey }`), never in the path or query, which end up in error messages and retry logs. On success Core returns the key with `status: "active"`.
+- `listAdminOrganizations({ q, limit, cursor })` sends **no** `X-Delegation-JWT` and is meant for the `admin` consumer (Platform Admin). Query params are optional; Core returns `{ items: [{ id, name, status, createdAt }], nextCursor }`.
 - Introspect failures (`CoreOrganizationsError`):
 
   | `statusCode` | `meta.coreCode` | `errors` | Meaning |

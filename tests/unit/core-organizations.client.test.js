@@ -372,6 +372,30 @@ describe('CoreOrganizationsClient', () => {
     });
   });
 
+  describe('listAdminOrganizations', () => {
+    test('GETs /admin/organizations without delegation', async () => {
+      axios.get.mockResolvedValue({ data: { items: [], nextCursor: null } });
+      const client = new CoreOrganizationsClient({
+        baseUrl: 'http://core:8092',
+        apiKey: 'secret',
+        logger,
+        getDelegationJwt,
+      });
+
+      await client.listAdminOrganizations({ q: 'Acme', limit: 20, cursor: 'abc' });
+
+      expect(axios.get).toHaveBeenCalledWith(
+        'http://core:8092/api/v1/internal/admin/organizations',
+        expect.objectContaining({
+          params: { q: 'Acme', limit: 20, cursor: 'abc' },
+          headers: expect.objectContaining({ 'api-key': 'secret' }),
+        }),
+      );
+      expect(axios.get.mock.calls[0][1].headers['X-Delegation-JWT']).toBeUndefined();
+      expect(getDelegationJwt).not.toHaveBeenCalled();
+    });
+  });
+
   test('sends the same correlation id and a new request id on each call', async () => {
     const { runWithCorrelation } = require('@nexum-io/common-observability-logging-package');
     axios.get.mockResolvedValue({ data: { token: 'invite' } });

@@ -282,6 +282,15 @@ class CoreOrganizationsClient {
   introspectApiKey(presentedKey) {
     return this.#request('POST', '/api-keys/introspect', { body: { apiKey: presentedKey } });
   }
+
+  // Platform Admin only (admin consumer). No X-Delegation-JWT.
+  listAdminOrganizations({ q, limit, cursor } = {}) {
+    const params = {};
+    if (q != null && String(q).length) params.q = String(q);
+    if (limit != null) params.limit = limit;
+    if (cursor != null && String(cursor).length) params.cursor = String(cursor);
+    return this.#request('GET', '/admin/organizations', { params });
+  }
 }
 
 module.exports = CoreOrganizationsClient;
