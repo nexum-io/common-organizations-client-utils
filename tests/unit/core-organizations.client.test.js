@@ -396,6 +396,47 @@ describe('CoreOrganizationsClient', () => {
     });
   });
 
+  describe('admin organization get and arbitration patch', () => {
+    test('GETs one organization without delegation', async () => {
+      axios.get.mockResolvedValue({ data: { id: 'org-1', arbitrationEnabled: false } });
+      const client = new CoreOrganizationsClient({
+        baseUrl: 'http://core:8092',
+        apiKey: 'secret',
+        logger,
+        getDelegationJwt,
+      });
+
+      await client.getAdminOrganization('org-1');
+
+      expect(axios.get).toHaveBeenCalledWith(
+        'http://core:8092/api/v1/internal/admin/organizations/org-1',
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'api-key': 'secret' }),
+        }),
+      );
+      expect(axios.get.mock.calls[0][1].headers['X-Delegation-JWT']).toBeUndefined();
+    });
+
+    test('PATCHes arbitrationEnabled without delegation', async () => {
+      axios.patch.mockResolvedValue({ data: { id: 'org-1', arbitrationEnabled: true } });
+      const client = new CoreOrganizationsClient({
+        baseUrl: 'http://core:8092',
+        apiKey: 'secret',
+        logger,
+      });
+
+      await client.patchAdminOrganizationArbitration('org-1', true);
+
+      expect(axios.patch).toHaveBeenCalledWith(
+        'http://core:8092/api/v1/internal/admin/organizations/org-1',
+        { arbitrationEnabled: true },
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'api-key': 'secret' }),
+        }),
+      );
+    });
+  });
+
   test('sends the same correlation id and a new request id on each call', async () => {
     const { runWithCorrelation } = require('@nexum-io/common-observability-logging-package');
     axios.get.mockResolvedValue({ data: { token: 'invite' } });

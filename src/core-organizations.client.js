@@ -291,6 +291,18 @@ class CoreOrganizationsClient {
     if (cursor != null && String(cursor).length) params.cursor = String(cursor);
     return this.#request('GET', '/admin/organizations', { params });
   }
+
+  getAdminOrganization(orgId) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    return this.#request('GET', `/admin/organizations/${encodedOrgId}`);
+  }
+
+  patchAdminOrganizationArbitration(orgId, arbitrationEnabled) {
+    const encodedOrgId = encodeURIComponent(orgId);
+    return this.#request('PATCH', `/admin/organizations/${encodedOrgId}`, {
+      body: { arbitrationEnabled },
+    });
+  }
 }
 
 module.exports = CoreOrganizationsClient;
