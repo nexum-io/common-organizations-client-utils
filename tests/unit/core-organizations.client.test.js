@@ -643,6 +643,33 @@ describe('CoreOrganizationsClient', () => {
     });
 
     test.each([
+      ['dot org', '.', 'user-1'],
+      ['dotdot org', '..', 'user-1'],
+      ['dot subject', 'org-1', '.'],
+      ['dotdot subject', 'org-1', '..'],
+    ])('%s is rejected before any HTTP call', async (_name, org, subject) => {
+      const err = await buildClient().isActiveOrganizationMember(org, subject).catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(400);
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    test('inherited data/active (polluted Object.prototype) never yields a boolean', async () => {
+      try {
+        Object.prototype.active = true;
+        Object.prototype.data = { active: true };
+        axios.get.mockResolvedValue({ data: {} });
+        const err = await buildClient().isActiveOrganizationMember('org-1', 'user-1').catch((e) => e);
+        expect(err).toBeInstanceOf(CoreOrganizationsError);
+        expect(err.statusCode).toBe(502);
+        expect(err.meta.malformedResponse).toBe(true);
+      } finally {
+        delete Object.prototype.active;
+        delete Object.prototype.data;
+      }
+    });
+
+    test.each([
       ['empty org', '', 'user-1'],
       ['empty subject', 'org-1', ''],
       ['whitespace org', '  ', 'user-1'],
