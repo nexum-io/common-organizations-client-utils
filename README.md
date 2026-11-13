@@ -39,6 +39,15 @@ const client = new CoreOrganizationsClient({
 
 **v0.4.0 (ARCH-030):** every request also sends `x-correlation-id` and a fresh `x-request-id`. When the host app has `@nexum-io/common-observability-logging-package` installed, `x-correlation-id` is the AsyncLocalStorage `correlation_id`. Otherwise it is a new UUID. The observability package is an optional peer, not a hard dependency.
 
+**v0.7.0 (DEV-1913):** every user-scoped method accepts an optional trailing `options` argument. `options.delegationJwt` (non-empty string) is sent as `X-Delegation-JWT` and takes precedence over the constructor `getDelegationJwt`; an empty or non-string value is ignored (falls back to the constructor resolver, else the call fails closed). Without `options` behaviour is unchanged from v0.6.0. Never log the token.
+
+```js
+// per-request delegation token (the caller's own), no constructor resolver needed
+const members = await client.listOrganizationMembers(userSubject, orgId, {
+  delegationJwt: req.headers['x-delegation-jwt'],
+});
+```
+
 ## Methods
 
 Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/v1/internal`. Every call sends the product `api-key`. User-scoped methods also send `X-Delegation-JWT` from `getDelegationJwt({ userSubject })` or per-call `options.delegationJwt` (path still uses the `userSubject` argument). Methods resolve with Core's JSON body as is; HTTP failures reject with `CoreOrganizationsError`.
@@ -47,10 +56,10 @@ Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/
 |--------|-------|-------|
 | `listUserOrganizations(userSubject)` | `GET /users/{userSubject}/organizations` | |
 | `createOrganization(userSubject, body)` | `POST /organizations` | |
-| `getOrganization(userSubject, orgId)` | `GET /organizations/{orgId}` | |
+| `getOrganization(userSubject, orgId, options?)` | `GET /organizations/{orgId}` | |
 | `updateOrganization(userSubject, orgId, body)` | `PATCH /organizations/{orgId}` | |
 | `archiveOrganization(userSubject, orgId)` | `POST /organizations/{orgId}/archive` | |
-| `listOrganizationMembers(userSubject, orgId)` | `GET /organizations/{orgId}/members` | |
+| `listOrganizationMembers(userSubject, orgId, options?)` | `GET /organizations/{orgId}/members` | |
 | `updateOrganizationMember(userSubject, orgId, memberUserSubject, body)` | `PATCH /organizations/{orgId}/members/{memberUserSubject}` | |
 | `getOrganizationMembership(userSubject, orgId, memberUserSubject)` | `GET /organizations/{orgId}/memberships/{memberUserSubject}` | |
 | `authorizeOrganizationAction(userSubject, orgId, body)` | `POST /organizations/{orgId}/authorize` | |

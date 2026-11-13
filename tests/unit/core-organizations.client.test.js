@@ -458,4 +458,87 @@ describe('CoreOrganizationsClient', () => {
     expect(first['x-request-id']).not.toBe(second['x-request-id']);
     expect(first['api-key']).toBe('secret');
   });
+
+  describe('per-call options.delegationJwt', () => {
+    const make = (extra = {}) => new CoreOrganizationsClient({
+      baseUrl: 'http://core:8092',
+      apiKey: 'secret',
+      logger,
+      ...extra,
+    });
+
+    test.each([
+      ['listOrganizationMembers', (c, o) => c.listOrganizationMembers('user-1', 'org-1', o)],
+      ['getOrganization', (c, o) => c.getOrganization('user-1', 'org-1', o)],
+    ])('%s sends per-call delegationJwt as X-Delegation-JWT', async (_name, call) => {
+      axios.get.mockResolvedValue({ data: {} });
+      await call(make(), { delegationJwt: 'per-call-jwt' });
+      expect(axios.get.mock.calls[0][1].headers['X-Delegation-JWT']).toBe('per-call-jwt');
+    });
+
+    test.each([
+      ['listOrganizationMembers', (c, o) => c.listOrganizationMembers('user-1', 'org-1', o)],
+      ['getOrganization', (c, o) => c.getOrganization('user-1', 'org-1', o)],
+    ])('%s: per-call wins over constructor getDelegationJwt', async (_name, call) => {
+      axios.get.mockResolvedValue({ data: {} });
+      await call(make({ getDelegationJwt }), { delegationJwt: 'per-call-jwt' });
+      expect(axios.get.mock.calls[0][1].headers['X-Delegation-JWT']).toBe('per-call-jwt');
+      expect(getDelegationJwt).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['listOrganizationMembers', (c, o) => c.listOrganizationMembers('user-1', 'org-1', o)],
+      ['getOrganization', (c, o) => c.getOrganization('user-1', 'org-1', o)],
+    ])('%s without option keeps constructor behaviour', async (_name, call) => {
+      axios.get.mockResolvedValue({ data: {} });
+      await call(make({ getDelegationJwt }));
+      expect(axios.get.mock.calls[0][1].headers['X-Delegation-JWT']).toBe('test-delegation-jwt');
+    });
+
+    test.each([
+      ['listOrganizationMembers', (c, o) => c.listOrganizationMembers('user-1', 'org-1', o)],
+      ['getOrganization', (c, o) => c.getOrganization('user-1', 'org-1', o)],
+    ])('%s: empty / non-string option falls back and never sends a bogus header', async (_name, call) => {
+      axios.get.mockResolvedValue({ data: {} });
+      for (const bad of ['', '   ', 123, null, {}]) {
+        axios.get.mockClear();
+        await call(make({ getDelegationJwt }), { delegationJwt: bad });
+        expect(axios.get.mock.calls[0][1].headers['X-Delegation-JWT']).toBe('test-delegation-jwt');
+      }
+      await expect(call(make(), { delegationJwt: '' })).rejects.toThrow(/X-Delegation-JWT is required/);
+    });
+
+    test.each([
+      ['listUserOrganizations', (c, o) => c.listUserOrganizations('user-1', o), 'get'],
+      ['createOrganization', (c, o) => c.createOrganization('user-1', {}, o), 'post'],
+      ['updateOrganization', (c, o) => c.updateOrganization('user-1', 'org-1', {}, o), 'patch'],
+      ['archiveOrganization', (c, o) => c.archiveOrganization('user-1', 'org-1', o), 'post'],
+      ['updateOrganizationMember', (c, o) => c.updateOrganizationMember('user-1', 'org-1', 'm-1', {}, o), 'patch'],
+      ['getOrganizationMembership', (c, o) => c.getOrganizationMembership('user-1', 'org-1', 'm-1', o), 'get'],
+      ['authorizeOrganizationAction', (c, o) => c.authorizeOrganizationAction('user-1', 'org-1', {}, o), 'post'],
+      ['listOrganizationInvites', (c, o) => c.listOrganizationInvites('user-1', 'org-1', o), 'get'],
+      ['createOrganizationInvite', (c, o) => c.createOrganizationInvite('user-1', 'org-1', {}, o), 'post'],
+      ['revokeOrganizationInvite', (c, o) => c.revokeOrganizationInvite('user-1', 'org-1', 'inv-1', o), 'post'],
+      ['acceptInvite', (c, o) => c.acceptInvite('user-1', 'tok', o), 'post'],
+      ['listOrganizationApiKeys', (c, o) => c.listOrganizationApiKeys('user-1', 'org-1', o), 'get'],
+      ['createOrganizationApiKey', (c, o) => c.createOrganizationApiKey('user-1', 'org-1', {}, o), 'post'],
+      ['renameOrganizationApiKey', (c, o) => c.renameOrganizationApiKey('user-1', 'org-1', 'k-1', {}, o), 'patch'],
+      ['rotateOrganizationApiKey', (c, o) => c.rotateOrganizationApiKey('user-1', 'org-1', 'k-1', {}, o), 'post'],
+      ['revokeOrganizationApiKey', (c, o) => c.revokeOrganizationApiKey('user-1', 'org-1', 'k-1', o), 'post'],
+    ])('%s accepts per-call delegationJwt', async (_name, call, verb) => {
+      axios[verb].mockResolvedValue({ data: {} });
+      await call(make(), { delegationJwt: 'per-call-jwt' });
+      const cfg = axios[verb].mock.calls[0][verb === 'get' ? 1 : 2];
+      expect(cfg.headers['X-Delegation-JWT']).toBe('per-call-jwt');
+    });
+
+    test('no-retry key minting stays no-retry when options are passed', async () => {
+      axios.post.mockRejectedValue({ response: { status: 503, data: {} }, message: 'x' });
+      await expect(
+        make({ maxRetries: 2, retryBaseDelayMs: 1 })
+          .createOrganizationApiKey('user-1', 'org-1', {}, { delegationJwt: 'per-call-jwt', maxRetries: 5 })
+      ).rejects.toThrow();
+      expect(axios.post).toHaveBeenCalledTimes(1);
+    });
+  });
 });
