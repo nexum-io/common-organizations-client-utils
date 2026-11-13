@@ -295,6 +295,38 @@ class CoreOrganizationsClient {
     return this.#request('POST', '/api-keys/introspect', { body: { apiKey: presentedKey } });
   }
 
+  // S2S only (arbitrator consumer): no X-Delegation-JWT, no X-User-Subject.
+  // Strict boolean: `true` only for `{ data: { active: true } }`, `false` only for
+  // `{ data: { active: false } }`. Any other body throws (never coerced), and so do
+  // transport/HTTP errors. Callers must treat every throw as "deny".
+  async isActiveOrganizationMember(organizationId, userSubject, options) {
+    for (const [name, value] of [['organizationId', organizationId], ['userSubject', userSubject]]) {
+      if (typeof value !== 'string' || value.trim() === '' || value === '.' || value === '..') {
+        throw new CoreOrganizationsError(
+          `isActiveOrganizationMember: ${name} must be a non-empty string and not a dot segment`,
+          400,
+          [`${name} is required`],
+          { coreCode: null, coreMessage: null, noResponse: true }
+        );
+      }
+    }
+    const path = `/organizations/${encodeURIComponent(organizationId)}`
+      + `/members/${encodeURIComponent(userSubject)}/membership`;
+    const body = await this.#request('GET', path, { options });
+    const own = (obj, key) => obj !== null && typeof obj === 'object' && !Array.isArray(obj)
+      && Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
+    const active = own(own(body, 'data'), 'active');
+    if (typeof active !== 'boolean') {
+      throw new CoreOrganizationsError(
+        'Core organizations GET membership check returned a malformed body (expected { data: { active: boolean } })',
+        502,
+        ['malformed membership response'],
+        { coreCode: null, coreMessage: null, noResponse: false, malformedResponse: true }
+      );
+    }
+    return active;
+  }
+
   // Platform Admin only (admin consumer). No X-Delegation-JWT.
   listAdminOrganizations({ q, limit, cursor } = {}) {
     const params = {};

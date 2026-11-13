@@ -541,4 +541,147 @@ describe('CoreOrganizationsClient', () => {
       expect(axios.post).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('isActiveOrganizationMember', () => {
+    const { CoreOrganizationsError } = require('../../src/core-organizations-error');
+    const BASE = 'http://core:8092/api/v1/internal/organizations';
+    const buildClient = (extra = {}) => new CoreOrganizationsClient({
+      baseUrl: 'http://core:8092',
+      apiKey: 'secret',
+      logger,
+      retryBaseDelayMs: 1,
+      ...extra,
+    });
+
+    test('returns true for { data: { active: true } }', async () => {
+      axios.get.mockResolvedValue({ data: { data: { active: true } } });
+      await expect(buildClient().isActiveOrganizationMember('org-1', 'user-1')).resolves.toBe(true);
+      expect(axios.get.mock.calls[0][0]).toBe(`${BASE}/org-1/members/user-1/membership`);
+    });
+
+    test('returns false for { data: { active: false } }', async () => {
+      axios.get.mockResolvedValue({ data: { data: { active: false } } });
+      await expect(buildClient().isActiveOrganizationMember('org-1', 'user-1')).resolves.toBe(false);
+    });
+
+    test.each([
+      ['empty object', {}],
+      ['data without active', { data: {} }],
+      ['string active', { data: { active: 'true' } }],
+      ['numeric active', { data: { active: 1 } }],
+      ['null data', { data: null }],
+      ['envelope-less', { active: true }],
+      ['array', []],
+      ['array data', { data: [{ active: true }] }],
+      ['null body', null],
+      ['empty body', ''],
+      ['undefined body', undefined],
+    ])('malformed body (%s) throws CoreOrganizationsError, never a boolean', async (_name, body) => {
+      axios.get.mockResolvedValue({ data: body });
+      const err = await buildClient().isActiveOrganizationMember('org-1', 'user-1').catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(502);
+      expect(err.meta.malformedResponse).toBe(true);
+    });
+
+    test.each([
+      ['../x', '..%2Fx'],
+      ['a/b', 'a%2Fb'],
+      ['a?b=1', 'a%3Fb%3D1'],
+      ['a#b', 'a%23b'],
+      ['a b', 'a%20b'],
+      ['%2f', '%252f'],
+    ])('encodes %j as a single path segment for both arguments', async (raw, encoded) => {
+      axios.get.mockResolvedValue({ data: { data: { active: true } } });
+      await buildClient().isActiveOrganizationMember(raw, raw);
+      expect(axios.get.mock.calls[0][0]).toBe(`${BASE}/${encoded}/members/${encoded}/membership`);
+    });
+
+    test('sends api-key and trace headers only: no delegation JWT, no subject header', async () => {
+      axios.get.mockResolvedValue({ data: { data: { active: true } } });
+      await buildClient({ getDelegationJwt }).isActiveOrganizationMember('org-1', 'user-1', {
+        delegationJwt: 'per-call-jwt',
+      });
+      const { headers } = axios.get.mock.calls[0][1];
+      expect(headers['api-key']).toBe('secret');
+      expect(headers['X-Delegation-JWT']).toBeUndefined();
+      expect(headers['X-User-Subject']).toBeUndefined();
+      expect(getDelegationJwt).not.toHaveBeenCalled();
+    });
+
+    test.each([400, 401, 403, 404])('%i surfaces as CoreOrganizationsError, not false, no retry', async (status) => {
+      axios.get.mockRejectedValue({ response: { status, data: { error: { code: 'X', message: 'nope' } } }, message: 'm' });
+      const err = await buildClient({ maxRetries: 2 }).isActiveOrganizationMember('org-1', 'user-1').catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(status);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+    });
+
+    test('5xx is retried per default then surfaces as an error', async () => {
+      axios.get.mockRejectedValue({ response: { status: 503, data: {} }, message: 'unavailable' });
+      const err = await buildClient({ maxRetries: 2 }).isActiveOrganizationMember('org-1', 'user-1').catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(503);
+      expect(axios.get).toHaveBeenCalledTimes(3);
+    });
+
+    test('recovers after a transient 5xx', async () => {
+      axios.get
+        .mockRejectedValueOnce({ response: { status: 502, data: {} }, message: 'bad gateway' })
+        .mockResolvedValueOnce({ data: { data: { active: false } } });
+      await expect(buildClient({ maxRetries: 2 }).isActiveOrganizationMember('org-1', 'user-1')).resolves.toBe(false);
+      expect(axios.get).toHaveBeenCalledTimes(2);
+    });
+
+    test('options.timeoutMs and options.maxRetries are honoured', async () => {
+      axios.get.mockRejectedValue({ response: { status: 500, data: {} }, message: 'boom' });
+      await buildClient({ maxRetries: 2 })
+        .isActiveOrganizationMember('org-1', 'user-1', { timeoutMs: 1234, maxRetries: 0 })
+        .catch(() => {});
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(axios.get.mock.calls[0][1].timeout).toBe(1234);
+    });
+
+    test.each([
+      ['dot org', '.', 'user-1'],
+      ['dotdot org', '..', 'user-1'],
+      ['dot subject', 'org-1', '.'],
+      ['dotdot subject', 'org-1', '..'],
+    ])('%s is rejected before any HTTP call', async (_name, org, subject) => {
+      const err = await buildClient().isActiveOrganizationMember(org, subject).catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(400);
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    test('inherited data/active (polluted Object.prototype) never yields a boolean', async () => {
+      try {
+        Object.prototype.active = true;
+        Object.prototype.data = { active: true };
+        axios.get.mockResolvedValue({ data: {} });
+        const err = await buildClient().isActiveOrganizationMember('org-1', 'user-1').catch((e) => e);
+        expect(err).toBeInstanceOf(CoreOrganizationsError);
+        expect(err.statusCode).toBe(502);
+        expect(err.meta.malformedResponse).toBe(true);
+      } finally {
+        delete Object.prototype.active;
+        delete Object.prototype.data;
+      }
+    });
+
+    test.each([
+      ['empty org', '', 'user-1'],
+      ['empty subject', 'org-1', ''],
+      ['whitespace org', '  ', 'user-1'],
+      ['null org', null, 'user-1'],
+      ['undefined subject', 'org-1', undefined],
+      ['numeric org', 42, 'user-1'],
+      ['object subject', 'org-1', {}],
+    ])('%s throws before any HTTP call', async (_name, org, subject) => {
+      const err = await buildClient().isActiveOrganizationMember(org, subject).catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(400);
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+  });
 });

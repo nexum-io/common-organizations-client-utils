@@ -80,6 +80,7 @@ Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/
 | `rotateOrganizationApiKey(userSubject, orgId, keyId, body, options?)` | `POST /organizations/{orgId}/api-keys/{keyId}/rotate` | body `{ expiresAt }` → key + `fullKey`; never retried |
 | `revokeOrganizationApiKey(userSubject, orgId, keyId, options?)` | `POST /organizations/{orgId}/api-keys/{keyId}/revoke` | → key |
 | `introspectApiKey(presentedKey)` | `POST /api-keys/introspect` | body `{ apiKey }` → `{ keyId, organizationId, name, prefix, scopes, expiresAt, status }`; no delegation header |
+| `isActiveOrganizationMember(organizationId, userSubject, options?)` | `GET /organizations/{organizationId}/members/{userSubject}/membership` | → strict `boolean`; no delegation / subject header; `arbitrator` consumer |
 | `listAdminOrganizations({ q, limit, cursor })` | `GET /admin/organizations` | → `{ items, nextCursor }`; no delegation header; `admin` consumer |
 
 A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBySubject, lastUsedAt, status }`, with `status` one of `active`, `expired`, `revoked`.
@@ -88,6 +89,16 @@ A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBy
 
 - `createOrganizationApiKey` and `rotateOrganizationApiKey` are **never retried**, whatever the instance `maxRetries`: each successful call mints a new secret, and a retry after a lost response could mint a second one nobody sees. A timeout does not prove the call failed — re-read `listOrganizationApiKeys` before trying again. All other methods keep the instance retry policy.
 - `introspectApiKey(presentedKey)` sends **no** `X-Delegation-JWT` and is meant for the `partners` consumer. The presented key travels only in the request body (`{ apiKey }`), never in the path or query, which end up in error messages and retry logs. On success Core returns the key with `status: "active"`.
+- `isActiveOrganizationMember(organizationId, userSubject, options?)` is the S2S membership check for the `arbitrator` consumer key. It sends **no** `X-Delegation-JWT` and no `X-User-Subject` (even if the constructor has `getDelegationJwt`); `timeoutMs` / `maxRetries` are honoured and GET retries on 429/5xx. Both arguments are `encodeURIComponent`-encoded; an empty or non-string argument throws a `CoreOrganizationsError` (400) before any HTTP call. Core wraps this route in a `{ data }` envelope (other routes return a bare body). The result is a strict boolean: `true` only for `{ data: { active: true } }`, `false` only for `{ data: { active: false } }` (non-member, unknown or archived org). Any other body throws `CoreOrganizationsError` (`statusCode` 502, `meta.malformedResponse: true`), as do 400/401/403/5xx. **Treat every thrown error as "deny"** (fail closed), never as `false`-and-continue or `true`.
+
+  ```js
+  try {
+    const allowed = await client.isActiveOrganizationMember(organizationId, userSubject);
+    if (!allowed) return deny();
+  } catch (err) {
+    return deny(); // fail closed on any error
+  }
+  ```
 - `listAdminOrganizations({ q, limit, cursor })` sends **no** `X-Delegation-JWT` and is meant for the `admin` consumer (Platform Admin). Query params are optional; Core returns `{ items: [{ id, name, status, createdAt }], nextCursor }`.
 - Introspect failures (`CoreOrganizationsError`):
 
