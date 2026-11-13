@@ -39,31 +39,46 @@ const client = new CoreOrganizationsClient({
 
 **v0.4.0 (ARCH-030):** every request also sends `x-correlation-id` and a fresh `x-request-id`. When the host app has `@nexum-io/common-observability-logging-package` installed, `x-correlation-id` is the AsyncLocalStorage `correlation_id`. Otherwise it is a new UUID. The observability package is an optional peer, not a hard dependency.
 
+**v0.7.0 (DEV-1913):** every user-scoped method accepts an optional trailing `options` argument. `options.delegationJwt` (non-empty string) is sent as `X-Delegation-JWT` and takes precedence over the constructor `getDelegationJwt`; an empty or non-string value is ignored (falls back to the constructor resolver, else the call fails closed). Without `options` behaviour is unchanged from v0.6.0. Never log the token.
+
+```js
+// per-request delegation token (the caller's own), no constructor resolver needed
+const members = await client.listOrganizationMembers(userSubject, orgId, {
+  delegationJwt: req.headers['x-delegation-jwt'],
+});
+```
+
+The forwarded delegation token must have been minted for this service's own api-key consumer: core-organizations-ms checks `payload.azp === productConsumer` (s2s-auth.js:126-131) and rejects tokens issued for another consumer.
+
+`userSubject` must be non-empty. With a falsy `userSubject` the client emits no `X-Delegation-JWT`, even when `options.delegationJwt` is set, and core-organizations-ms answers 401 `auth.delegation_missing`.
+
+Other accepted per-call options: `options.timeoutMs` (request timeout in ms, default is the constructor `timeoutMs`) and `options.maxRetries` (default is the constructor `maxRetries`). `createOrganizationApiKey` and `rotateOrganizationApiKey` always stay no-retry: a caller `maxRetries` is ignored there.
+
 ## Methods
 
 Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/v1/internal`. Every call sends the product `api-key`. User-scoped methods also send `X-Delegation-JWT` from `getDelegationJwt({ userSubject })` or per-call `options.delegationJwt` (path still uses the `userSubject` argument). Methods resolve with Core's JSON body as is; HTTP failures reject with `CoreOrganizationsError`.
 
 | Method | Route | Notes |
 |--------|-------|-------|
-| `listUserOrganizations(userSubject)` | `GET /users/{userSubject}/organizations` | |
-| `createOrganization(userSubject, body)` | `POST /organizations` | |
-| `getOrganization(userSubject, orgId)` | `GET /organizations/{orgId}` | |
-| `updateOrganization(userSubject, orgId, body)` | `PATCH /organizations/{orgId}` | |
-| `archiveOrganization(userSubject, orgId)` | `POST /organizations/{orgId}/archive` | |
-| `listOrganizationMembers(userSubject, orgId)` | `GET /organizations/{orgId}/members` | |
-| `updateOrganizationMember(userSubject, orgId, memberUserSubject, body)` | `PATCH /organizations/{orgId}/members/{memberUserSubject}` | |
-| `getOrganizationMembership(userSubject, orgId, memberUserSubject)` | `GET /organizations/{orgId}/memberships/{memberUserSubject}` | |
-| `authorizeOrganizationAction(userSubject, orgId, body)` | `POST /organizations/{orgId}/authorize` | |
-| `listOrganizationInvites(userSubject, orgId)` | `GET /organizations/{orgId}/invites` | |
-| `createOrganizationInvite(userSubject, orgId, body)` | `POST /organizations/{orgId}/invites` | |
-| `revokeOrganizationInvite(userSubject, orgId, inviteId)` | `POST /organizations/{orgId}/invites/{inviteId}/revoke` | |
+| `listUserOrganizations(userSubject, options?)` | `GET /users/{userSubject}/organizations` | |
+| `createOrganization(userSubject, body, options?)` | `POST /organizations` | |
+| `getOrganization(userSubject, orgId, options?)` | `GET /organizations/{orgId}` | |
+| `updateOrganization(userSubject, orgId, body, options?)` | `PATCH /organizations/{orgId}` | |
+| `archiveOrganization(userSubject, orgId, options?)` | `POST /organizations/{orgId}/archive` | |
+| `listOrganizationMembers(userSubject, orgId, options?)` | `GET /organizations/{orgId}/members` | |
+| `updateOrganizationMember(userSubject, orgId, memberUserSubject, body, options?)` | `PATCH /organizations/{orgId}/members/{memberUserSubject}` | |
+| `getOrganizationMembership(userSubject, orgId, memberUserSubject, options?)` | `GET /organizations/{orgId}/memberships/{memberUserSubject}` | |
+| `authorizeOrganizationAction(userSubject, orgId, body, options?)` | `POST /organizations/{orgId}/authorize` | |
+| `listOrganizationInvites(userSubject, orgId, options?)` | `GET /organizations/{orgId}/invites` | |
+| `createOrganizationInvite(userSubject, orgId, body, options?)` | `POST /organizations/{orgId}/invites` | |
+| `revokeOrganizationInvite(userSubject, orgId, inviteId, options?)` | `POST /organizations/{orgId}/invites/{inviteId}/revoke` | |
 | `previewInvite(token)` | `GET /invites/{token}` | no delegation header |
-| `acceptInvite(userSubject, token)` | `POST /invites/{token}/accept` | |
-| `listOrganizationApiKeys(userSubject, orgId)` | `GET /organizations/{orgId}/api-keys` | → `{ items }`, newest first, revoked included |
-| `createOrganizationApiKey(userSubject, orgId, body)` | `POST /organizations/{orgId}/api-keys` | body `{ name, scopes, expiresAt }` → key + `fullKey`; never retried |
-| `renameOrganizationApiKey(userSubject, orgId, keyId, body)` | `PATCH /organizations/{orgId}/api-keys/{keyId}` | body `{ name }` → key |
-| `rotateOrganizationApiKey(userSubject, orgId, keyId, body)` | `POST /organizations/{orgId}/api-keys/{keyId}/rotate` | body `{ expiresAt }` → key + `fullKey`; never retried |
-| `revokeOrganizationApiKey(userSubject, orgId, keyId)` | `POST /organizations/{orgId}/api-keys/{keyId}/revoke` | → key |
+| `acceptInvite(userSubject, token, options?)` | `POST /invites/{token}/accept` | |
+| `listOrganizationApiKeys(userSubject, orgId, options?)` | `GET /organizations/{orgId}/api-keys` | → `{ items }`, newest first, revoked included |
+| `createOrganizationApiKey(userSubject, orgId, body, options?)` | `POST /organizations/{orgId}/api-keys` | body `{ name, scopes, expiresAt }` → key + `fullKey`; never retried |
+| `renameOrganizationApiKey(userSubject, orgId, keyId, body, options?)` | `PATCH /organizations/{orgId}/api-keys/{keyId}` | body `{ name }` → key |
+| `rotateOrganizationApiKey(userSubject, orgId, keyId, body, options?)` | `POST /organizations/{orgId}/api-keys/{keyId}/rotate` | body `{ expiresAt }` → key + `fullKey`; never retried |
+| `revokeOrganizationApiKey(userSubject, orgId, keyId, options?)` | `POST /organizations/{orgId}/api-keys/{keyId}/revoke` | → key |
 | `introspectApiKey(presentedKey)` | `POST /api-keys/introspect` | body `{ apiKey }` → `{ keyId, organizationId, name, prefix, scopes, expiresAt, status }`; no delegation header |
 | `listAdminOrganizations({ q, limit, cursor })` | `GET /admin/organizations` | → `{ items, nextCursor }`; no delegation header; `admin` consumer |
 

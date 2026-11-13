@@ -143,7 +143,8 @@ class CoreOrganizationsClient {
     );
   }
 
-  async #request(method, path, { userSubject, body, params, options = {} } = {}) {
+  async #request(method, path, { userSubject, body, params, options } = {}) {
+    options = options && typeof options === 'object' ? options : {};
     this.#assertEnabled();
     const timeout = options.timeoutMs ?? this.defaultTimeoutMs;
     const maxRetries = options.maxRetries ?? this.maxRetries;
@@ -168,60 +169,69 @@ class CoreOrganizationsClient {
     }, { maxRetries });
   }
 
-  listUserOrganizations(userSubject) {
+  // User-scoped methods take an optional trailing `options`:
+  // `options.delegationJwt` (string) is the per-call X-Delegation-JWT and wins
+  // over the constructor `getDelegationJwt`. `timeoutMs` / `maxRetries` are
+  // honoured as well. Key-minting calls ignore a caller `maxRetries` (never retried).
+  listUserOrganizations(userSubject, options) {
     const encoded = encodeURIComponent(userSubject);
-    return this.#request('GET', `/users/${encoded}/organizations`, { userSubject });
+    return this.#request('GET', `/users/${encoded}/organizations`, { userSubject, options });
   }
 
-  createOrganization(userSubject, body) {
-    return this.#request('POST', '/organizations', { userSubject, body });
+  createOrganization(userSubject, body, options) {
+    return this.#request('POST', '/organizations', { userSubject, body, options });
   }
 
-  getOrganization(userSubject, orgId) {
-    return this.#request('GET', `/organizations/${orgId}`, { userSubject });
+  getOrganization(userSubject, orgId, options) {
+    return this.#request('GET', `/organizations/${orgId}`, { userSubject, options });
   }
 
-  updateOrganization(userSubject, orgId, body) {
-    return this.#request('PATCH', `/organizations/${orgId}`, { userSubject, body });
+  updateOrganization(userSubject, orgId, body, options) {
+    return this.#request('PATCH', `/organizations/${orgId}`, { userSubject, body, options });
   }
 
-  archiveOrganization(userSubject, orgId) {
-    return this.#request('POST', `/organizations/${orgId}/archive`, { userSubject, body: {} });
+  archiveOrganization(userSubject, orgId, options) {
+    return this.#request('POST', `/organizations/${orgId}/archive`, { userSubject, body: {}, options });
   }
 
-  listOrganizationMembers(userSubject, orgId) {
-    return this.#request('GET', `/organizations/${orgId}/members`, { userSubject });
+  listOrganizationMembers(userSubject, orgId, options) {
+    return this.#request('GET', `/organizations/${orgId}/members`, { userSubject, options });
   }
 
-  updateOrganizationMember(userSubject, orgId, memberUserSubject, body) {
+  updateOrganizationMember(userSubject, orgId, memberUserSubject, body, options) {
     const encoded = encodeURIComponent(memberUserSubject);
     return this.#request('PATCH', `/organizations/${orgId}/members/${encoded}`, {
       userSubject,
       body,
+      options,
     });
   }
 
-  getOrganizationMembership(userSubject, orgId, memberUserSubject) {
+  getOrganizationMembership(userSubject, orgId, memberUserSubject, options) {
     const encoded = encodeURIComponent(memberUserSubject);
-    return this.#request('GET', `/organizations/${orgId}/memberships/${encoded}`, { userSubject });
+    return this.#request('GET', `/organizations/${orgId}/memberships/${encoded}`, {
+      userSubject,
+      options,
+    });
   }
 
-  authorizeOrganizationAction(userSubject, orgId, body) {
-    return this.#request('POST', `/organizations/${orgId}/authorize`, { userSubject, body });
+  authorizeOrganizationAction(userSubject, orgId, body, options) {
+    return this.#request('POST', `/organizations/${orgId}/authorize`, { userSubject, body, options });
   }
 
-  listOrganizationInvites(userSubject, orgId) {
-    return this.#request('GET', `/organizations/${orgId}/invites`, { userSubject });
+  listOrganizationInvites(userSubject, orgId, options) {
+    return this.#request('GET', `/organizations/${orgId}/invites`, { userSubject, options });
   }
 
-  createOrganizationInvite(userSubject, orgId, body) {
-    return this.#request('POST', `/organizations/${orgId}/invites`, { userSubject, body });
+  createOrganizationInvite(userSubject, orgId, body, options) {
+    return this.#request('POST', `/organizations/${orgId}/invites`, { userSubject, body, options });
   }
 
-  revokeOrganizationInvite(userSubject, orgId, inviteId) {
+  revokeOrganizationInvite(userSubject, orgId, inviteId, options) {
     return this.#request('POST', `/organizations/${orgId}/invites/${inviteId}/revoke`, {
       userSubject,
       body: {},
+      options,
     });
   }
 
@@ -230,50 +240,52 @@ class CoreOrganizationsClient {
     return this.#request('GET', `/invites/${encoded}`, {});
   }
 
-  acceptInvite(userSubject, token) {
+  acceptInvite(userSubject, token, options) {
     const encoded = encodeURIComponent(token);
-    return this.#request('POST', `/invites/${encoded}/accept`, { userSubject, body: {} });
+    return this.#request('POST', `/invites/${encoded}/accept`, { userSubject, body: {}, options });
   }
 
-  listOrganizationApiKeys(userSubject, orgId) {
+  listOrganizationApiKeys(userSubject, orgId, options) {
     const encodedOrgId = encodeURIComponent(orgId);
-    return this.#request('GET', `/organizations/${encodedOrgId}/api-keys`, { userSubject });
+    return this.#request('GET', `/organizations/${encodedOrgId}/api-keys`, { userSubject, options });
   }
 
-  createOrganizationApiKey(userSubject, orgId, body) {
+  createOrganizationApiKey(userSubject, orgId, body, options) {
     const encodedOrgId = encodeURIComponent(orgId);
     return this.#request('POST', `/organizations/${encodedOrgId}/api-keys`, {
       userSubject,
       body,
-      options: NO_RETRY,
+      options: { ...options, ...NO_RETRY },
     });
   }
 
-  renameOrganizationApiKey(userSubject, orgId, keyId, body) {
+  renameOrganizationApiKey(userSubject, orgId, keyId, body, options) {
     const encodedOrgId = encodeURIComponent(orgId);
     const encodedKeyId = encodeURIComponent(keyId);
     return this.#request('PATCH', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}`, {
       userSubject,
       body,
+      options,
     });
   }
 
-  rotateOrganizationApiKey(userSubject, orgId, keyId, body) {
+  rotateOrganizationApiKey(userSubject, orgId, keyId, body, options) {
     const encodedOrgId = encodeURIComponent(orgId);
     const encodedKeyId = encodeURIComponent(keyId);
     return this.#request('POST', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}/rotate`, {
       userSubject,
       body,
-      options: NO_RETRY,
+      options: { ...options, ...NO_RETRY },
     });
   }
 
-  revokeOrganizationApiKey(userSubject, orgId, keyId) {
+  revokeOrganizationApiKey(userSubject, orgId, keyId, options) {
     const encodedOrgId = encodeURIComponent(orgId);
     const encodedKeyId = encodeURIComponent(keyId);
     return this.#request('POST', `/organizations/${encodedOrgId}/api-keys/${encodedKeyId}/revoke`, {
       userSubject,
       body: {},
+      options,
     });
   }
 
