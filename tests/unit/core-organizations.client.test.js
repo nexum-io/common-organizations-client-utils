@@ -684,4 +684,71 @@ describe('CoreOrganizationsClient', () => {
       expect(axios.get).not.toHaveBeenCalled();
     });
   });
+
+  describe('checkOrganizationPermission', () => {
+    const { CoreOrganizationsError } = require('../../src/core-organizations-error');
+    const BASE = 'http://core:8092/api/v1/internal/organizations';
+    const buildClient = (extra = {}) => new CoreOrganizationsClient({
+      baseUrl: 'http://core:8092',
+      apiKey: 'secret',
+      logger,
+      retryBaseDelayMs: 1,
+      ...extra,
+    });
+
+    test('GETs the membership path with the permission query and returns { active, allowed } as-is', async () => {
+      axios.get.mockResolvedValue({ data: { data: { active: true, allowed: true } } });
+      await expect(
+        buildClient().checkOrganizationPermission('org-1', 'user-1', 'arbitration.committee.create')
+      ).resolves.toEqual({ active: true, allowed: true });
+      const [url, config] = axios.get.mock.calls[0];
+      expect(url).toBe(`${BASE}/org-1/members/user-1/membership`);
+      expect(config.params).toEqual({ permission: 'arbitration.committee.create' });
+      expect(config.headers['X-Delegation-JWT']).toBeUndefined();
+    });
+
+    test('returns active member without the permission as allowed: false', async () => {
+      axios.get.mockResolvedValue({ data: { data: { active: true, allowed: false } } });
+      await expect(buildClient().checkOrganizationPermission('org-1', 'user-1', 'p'))
+        .resolves.toEqual({ active: true, allowed: false });
+    });
+
+    test.each([
+      ['missing allowed', { data: { active: true } }],
+      ['missing active', { data: { allowed: true } }],
+      ['string allowed', { data: { active: true, allowed: 'true' } }],
+      ['null body', null],
+      ['envelope-less', { active: true, allowed: true }],
+    ])('malformed body (%s) throws 502 malformedResponse', async (_name, body) => {
+      axios.get.mockResolvedValue({ data: body });
+      const err = await buildClient().checkOrganizationPermission('org-1', 'user-1', 'p').catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(502);
+      expect(err.meta.malformedResponse).toBe(true);
+      expect(err.message).toContain('expected { data: { active: boolean, allowed: boolean } }');
+    });
+
+    test.each([
+      ['empty org', '', 'user-1', 'p'],
+      ['empty subject', 'org-1', '', 'p'],
+      ['dot subject', 'org-1', '..', 'p'],
+      ['empty permission', 'org-1', 'user-1', ''],
+      ['whitespace permission', 'org-1', 'user-1', '   '],
+      ['null permission', 'org-1', 'user-1', null],
+      ['numeric permission', 'org-1', 'user-1', 7],
+    ])('%s throws 400 noResponse before any HTTP call', async (_name, org, subject, permission) => {
+      const err = await buildClient().checkOrganizationPermission(org, subject, permission).catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(400);
+      expect(err.meta.noResponse).toBe(true);
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    test('transport errors propagate as CoreOrganizationsError (fail closed)', async () => {
+      axios.get.mockRejectedValue({ response: { status: 403, data: { error: { code: 'FORBIDDEN', message: 'no' } } } });
+      const err = await buildClient().checkOrganizationPermission('org-1', 'user-1', 'p').catch((e) => e);
+      expect(err).toBeInstanceOf(CoreOrganizationsError);
+      expect(err.statusCode).toBe(403);
+    });
+  });
 });

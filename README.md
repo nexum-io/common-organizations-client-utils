@@ -81,6 +81,7 @@ Method name = Core OpenAPI `operationId`. Routes are relative to `{baseUrl}/api/
 | `revokeOrganizationApiKey(userSubject, orgId, keyId, options?)` | `POST /organizations/{orgId}/api-keys/{keyId}/revoke` | → key |
 | `introspectApiKey(presentedKey)` | `POST /api-keys/introspect` | body `{ apiKey }` → `{ keyId, organizationId, name, prefix, scopes, expiresAt, status }`; no delegation header |
 | `isActiveOrganizationMember(organizationId, userSubject, options?)` | `GET /organizations/{organizationId}/members/{userSubject}/membership` | → strict `boolean`; no delegation / subject header; `arbitrator` consumer |
+| `checkOrganizationPermission(organizationId, userSubject, permission, options?)` | `GET /organizations/{organizationId}/members/{userSubject}/membership?permission=` | → `{ active, allowed }` (both strict booleans); no delegation / subject header; `arbitrator` consumer |
 | `listAdminOrganizations({ q, limit, cursor })` | `GET /admin/organizations` | → `{ items, nextCursor }`; no delegation header; `admin` consumer |
 
 A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBySubject, lastUsedAt, status }`, with `status` one of `active`, `expired`, `revoked`.
@@ -99,6 +100,7 @@ A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBy
     return deny(); // fail closed on any error
   }
   ```
+- `checkOrganizationPermission(organizationId, userSubject, permission, options?)` is `isActiveOrganizationMember` plus a permission check: same S2S auth (no `X-Delegation-JWT`, no `X-User-Subject`), same retry/`options` handling. `permission` (e.g. a Core permission code) is sent as the `?permission=` query and Core answers `{ data: { active, allowed } }`; the method returns `{ active, allowed }`. An empty or non-string `organizationId` / `userSubject` / `permission` throws `CoreOrganizationsError` (400, `meta.noResponse: true`) before any HTTP call; a body without boolean `active` and boolean `allowed` throws 502 (`meta.malformedResponse: true`). Allow only when `active && allowed`, and **treat every thrown error as "deny"** (fail closed). Requires a Core version that supports the `permission` query (older Core ignores it and returns only `{ active }`, which this client rejects as malformed).
 - `listAdminOrganizations({ q, limit, cursor })` sends **no** `X-Delegation-JWT` and is meant for the `admin` consumer (Platform Admin). Query params are optional; Core returns `{ items: [{ id, name, status, createdAt }], nextCursor }`.
 - Introspect failures (`CoreOrganizationsError`):
 
