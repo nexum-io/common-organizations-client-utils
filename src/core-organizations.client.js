@@ -327,6 +327,48 @@ class CoreOrganizationsClient {
     return active;
   }
 
+  // S2S only (arbitrator consumer), same trust model as isActiveOrganizationMember.
+  // Asks Core whether the member is active AND holds `permission` (Core resolves
+  // role -> permission). Returns `{ active, allowed }` only for a body with both
+  // booleans; any other body throws (never coerced), as do transport/HTTP errors.
+  // Callers must treat every throw as "deny".
+  async checkOrganizationPermission(organizationId, userSubject, permission, options) {
+    for (const [name, value] of [
+      ['organizationId', organizationId],
+      ['userSubject', userSubject],
+      ['permission', permission],
+    ]) {
+      const isDotSegment = name !== 'permission' && (value === '.' || value === '..');
+      if (typeof value !== 'string' || value.trim() === '' || isDotSegment) {
+        throw new CoreOrganizationsError(
+          `checkOrganizationPermission: ${name} must be a non-empty string`
+          + `${name === 'permission' ? '' : ' and not a dot segment'}`,
+          400,
+          [`${name} is required`],
+          { coreCode: null, coreMessage: null, noResponse: true }
+        );
+      }
+    }
+    const path = `/organizations/${encodeURIComponent(organizationId)}`
+      + `/members/${encodeURIComponent(userSubject)}/membership`;
+    const body = await this.#request('GET', path, { params: { permission }, options });
+    const own = (obj, key) => obj !== null && typeof obj === 'object' && !Array.isArray(obj)
+      && Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
+    const data = own(body, 'data');
+    const active = own(data, 'active');
+    const allowed = own(data, 'allowed');
+    if (typeof active !== 'boolean' || typeof allowed !== 'boolean') {
+      throw new CoreOrganizationsError(
+        'Core organizations GET membership permission check returned a malformed body '
+        + '(expected { data: { active: boolean, allowed: boolean } })',
+        502,
+        ['malformed membership response'],
+        { coreCode: null, coreMessage: null, noResponse: false, malformedResponse: true }
+      );
+    }
+    return { active, allowed };
+  }
+
   // Platform Admin only (admin consumer). No X-Delegation-JWT.
   listAdminOrganizations({ q, limit, cursor } = {}) {
     const params = {};
