@@ -57,9 +57,11 @@ class CoreOrganizationsClient {
 
   #assertEnabled() {
     if (!this.enabled) {
+      // Canonical product ENV for hosts mapping into constructor baseUrl/apiKey
+      // (package does not read process.env; BASE_URL callers still pass baseUrl).
       throw new Error(
         'Core organizations client is not configured '
-        + '(CORE_ORGANIZATIONS_BASE_URL|CORE_ORGANIZATIONS_API_ENDPOINT / CORE_ORGANIZATIONS_API_KEY)'
+        + '(CORE_ORGANIZATIONS_API_ENDPOINT / CORE_ORGANIZATIONS_API_KEY)'
       );
     }
   }
