@@ -32,6 +32,18 @@ describe('CoreOrganizationsClient', () => {
     ).toThrow(/bare service origin/);
   });
 
+  test('assertEnabled names canonical CORE_ORGANIZATIONS_API_ENDPOINT only', async () => {
+    const client = new CoreOrganizationsClient({
+      baseUrl: '',
+      apiKey: '',
+      logger,
+    });
+    await expect(client.listAdminOrganizations()).rejects.toThrow(
+      'Core organizations client is not configured '
+      + '(CORE_ORGANIZATIONS_API_ENDPOINT / CORE_ORGANIZATIONS_API_KEY)'
+    );
+  });
+
   test('createOrganization posts to /api/v1/internal/organizations with headers', async () => {
     axios.post.mockResolvedValue({ data: { id: 'org-1', name: 'Acme' } });
     const client = new CoreOrganizationsClient({
