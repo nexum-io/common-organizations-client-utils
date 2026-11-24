@@ -17,19 +17,24 @@ npm install github:nexum-io/common-organizations-client-utils#v0.4.0
 
 ## Usage
 
+This package reads **no** `process.env`. Resolve stand + secrets in the host MS (`configs/core/app.config.js`), then pass constructor args. Do **not** dual-read `process.env.X || literal` at the call site (ENV-STD / `docs/engineering/env-and-config-layers.md`).
+
 ```js
 const {
   CoreOrganizationsClient,
   CoreOrganizationsError,
 } = require('@nexum-io/common-organizations-client-utils');
 
+// Host config: stand (URL, timeouts) + Infisical secret (api key)
+const { coreOrganizations } = appConfig;
+
 const client = new CoreOrganizationsClient({
-  baseUrl: process.env.CORE_ORGANIZATIONS_BASE_URL, // bare origin only
-  apiKey: process.env.CORE_ORGANIZATIONS_API_KEY,
+  baseUrl: coreOrganizations.baseUrl, // bare origin only (stand)
+  apiKey: coreOrganizations.apiKey,   // S2S key (secret)
   logger,
-  timeoutMs: Number(process.env.CORE_ORGANIZATIONS_HTTP_TIMEOUT_MS) || 30000,
-  maxRetries: Number(process.env.CORE_ORGANIZATIONS_HTTP_MAX_RETRIES) || 2,
-  retryBaseDelayMs: Number(process.env.CORE_ORGANIZATIONS_RETRY_BASE_DELAY_MS) || 250,
+  timeoutMs: coreOrganizations.httpTimeoutMs,
+  maxRetries: coreOrganizations.httpMaxRetries,
+  retryBaseDelayMs: coreOrganizations.retryBaseDelayMs,
   // ARCH-005: required for user-scoped calls (Core hard-cut — no bare X-User-Subject)
   getDelegationJwt: async ({ userSubject }) => exchangeAccessForDelegation(userSubject),
 });
@@ -115,16 +120,18 @@ A key is `{ id, name, prefix, scopes, expiresAt, revokedAt, createdAt, createdBy
   Treat a 401 without an `api_key.*` marker, and any 403, as a dependency failure on your side, never as "the integrator's key is bad".
 - `fullKey` (create and rotate responses only) is the plaintext secret, returned once. **Never log it**, nor a presented key or the `api-key` header — log `id` / `keyId` and `prefix` only.
 
-## Consumer ENV
+## Consumer config (ENV-STD)
 
-| Variable | Description |
-|----------|-------------|
-| `CORE_ORGANIZATIONS_BASE_URL` | Bare origin (canonical) |
-| `CORE_ORGANIZATIONS_API_ENDPOINT` | Alias for `BASE_URL` (migration) |
-| `CORE_ORGANIZATIONS_API_KEY` | Per-consumer `api-key` header |
-| `CORE_ORGANIZATIONS_HTTP_TIMEOUT_MS` | default `30000` |
-| `CORE_ORGANIZATIONS_HTTP_MAX_RETRIES` | default `2` |
-| `CORE_ORGANIZATIONS_RETRY_BASE_DELAY_MS` | default `250` (linear backoff) |
+Wire the client from host `appConfig` only (stand + secrets). Constructor defaults (`timeoutMs` 30000, `maxRetries` 2, `retryBaseDelayMs` 250) apply when the host omits those fields — bake contour values into stand; do **not** paper over missing stand with `process.env.X || <literal>`.
+
+| Constructor arg | Class | Host source |
+|-----------------|-------|-------------|
+| `baseUrl` | STAND | Contour stand bare origin. If the host still names a single env/stand key, use **`CORE_ORGANIZATIONS_API_ENDPOINT`** (canonical product name). Map stand `coreOrganizations.endpoint` / that env into `baseUrl`. |
+| `apiKey` | SECRET | Infisical via `secrets.js` / `getSecrets()` (per-consumer `api-key` header; often `CORE_ORGANIZATIONS_API_KEY`) |
+| `timeoutMs` / `maxRetries` / `retryBaseDelayMs` | STAND | Contour stand (optional; otherwise constructor defaults) |
+| `getDelegationJwt` | — | Host composition (not env) |
+
+Do **not** dual-read `CORE_ORGANIZATIONS_BASE_URL` alongside `CORE_ORGANIZATIONS_API_ENDPOINT` in new consumer code — one stand field / one key, mapped to constructor `baseUrl`.
 
 ## Contract
 
