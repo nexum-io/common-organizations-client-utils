@@ -137,7 +137,7 @@ Do **not** dual-read `CORE_ORGANIZATIONS_BASE_URL` alongside `CORE_ORGANIZATIONS
 
 OpenAPI: `core-organizations-ms/docs/openapi/internal-api.openapi.yaml`
 
-Cross-product: `core-organizations-ms/docs/cross-product/core-organizations-consumers.md`
+Cross-product: `core/core-docs/contracts/core-organizations-consumers.md`
 
 ## Develop
 
